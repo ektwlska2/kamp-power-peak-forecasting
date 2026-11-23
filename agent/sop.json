@@ -1,0 +1,123 @@
+{
+  "version": "1.0",
+  "units_note": "All demand values are in the dataset's recorded units (treated as 15-minute demand). Energy = recorded unit x hour.",
+  "cap": 190,
+  "defaults_source": "Computed from Jun-Jul 2021 (before the test period) by agent/build_cache.py; see cache 'stats'.",
+  "tiers": {
+    "GREEN": {
+      "name_ko": "정상",
+      "meaning_ko": "피크 위험 신호 없음",
+      "actions_ko": [
+        "정상 운전",
+        "재량 부하(예: 공조 예냉, 충전, 배치 설비)의 기동은 가능하면 위험 시간대(08–11시, 13–14시) 밖으로 계획"
+      ]
+    },
+    "YELLOW": {
+      "name_ko": "주의",
+      "meaning_ko": "시계열 규칙(08–11시 또는 13–14시, 직전 시간 평균 ≥ 100) 발동, 또는 다음 시간 예측의 90% 예측 구간 상한이 상한(190) 이상. 피크 위험이 있으나 분류기 신호는 없음",
+      "owner_ko": "현장 반장",
+      "actions_ko": [
+        "새로운 재량 부하 기동 보류",
+        "미룰 수 있는 부하 목록 확인 및 준비",
+        "다음 시간 경보 확인"
+      ],
+      "response_minutes": 15
+    },
+    "RED": {
+      "name_ko": "경고",
+      "meaning_ko": "피크 분류기가 이번 시간 피크 가능성이 높다고 판단",
+      "owner_ko": "현장 반장 → 설비 담당자",
+      "actions_ko": [
+        "제안된 부하량을 이번 시간 동안 이연 (검증 통과 시)",
+        "재가동 설비는 15분 간격 순차 기동",
+        "검증 실패 시 대체 조치 수행"
+      ],
+      "response_minutes": 5
+    }
+  },
+  "horizons": {
+    "day_ahead": {
+      "when_ko": "자정 (다음 날 예측 발행 시점)",
+      "triggers": [
+        "restart_day",
+        "hot_day",
+        "high_dayahead_max"
+      ],
+      "actions_ko": {
+        "restart_day": "휴지 후 첫 가동일: 오전 기동과 점심 후 재기동을 15분 간격으로 나누어 계획",
+        "hot_day": "최고기온 28 °C 이상 예보: 공조 예냉을 07시 이전에 실시하고 13–14시 재량 부하 금지",
+        "high_dayahead_max": "하루 전 예측 최대치가 상한에 근접: 위험 시간대의 재량 부하 일정을 오후 늦게로 이동"
+      }
+    },
+    "hour_ahead": {
+      "when_ko": "매 정시 (다음 시간 대상, lead 1)",
+      "actions_ko": {
+        "YELLOW": "다음 시간 재량 부하 기동 보류 준비",
+        "RED": "이연할 부하를 지정하고 담당자에게 통보"
+      }
+    },
+    "this_hour": {
+      "when_ko": "매 정시 (이번 시간 대상, lead 0)",
+      "actions_ko": {
+        "YELLOW": "새 재량 부하 기동 보류",
+        "RED": "제안된 이연량 실행 (검증 통과 시)"
+      }
+    }
+  },
+  "deferral": {
+    "max_delay_hours": 4,
+    "release_must_finish_by_hour": 22,
+    "note_ko": "이연한 에너지는 상한 아래 여유가 있는 이후 시간에 재투입. 최대 4시간 이내, 22시 이전에 모두 해소되어야 함 (피크 상한 시뮬레이션의 최장 지연 4시간 근거)."
+  },
+  "fallback_ko": [
+    "이연 불가 판정: 이번 시간과 이후 시간 모두 상한 근접",
+    "대체 조치 1: 다음 배치 기동을 점심(12시) 또는 15시 이후로 연기",
+    "대체 조치 2: 비필수 부하(조명 일부, 공조 설정 완화)를 이번 시간 동안 감축 (재투입 없음)",
+    "대체 조치 3: 설비 담당자에게 수동 판단 요청"
+  ],
+  "load_priority_template": [
+    {
+      "class": "A",
+      "desc_ko": "중단 불가 (프레스 라인, 안전 설비)",
+      "deferrable": false
+    },
+    {
+      "class": "B",
+      "desc_ko": "짧게 이연 가능 (공기압축기 + 버퍼 탱크, 냉각수 펌프)",
+      "deferrable": true,
+      "max_delay_min": 30
+    },
+    {
+      "class": "C",
+      "desc_ko": "길게 이연 가능 (배치 가열, 충전, 공조 예냉)",
+      "deferrable": true,
+      "max_delay_min": 240
+    }
+  ],
+  "rollout": [
+    {
+      "stage": 0,
+      "period_ko": "도입 1–4주",
+      "model": "Chronos-2 zero-shot + 시계열 규칙",
+      "reason_ko": "이력 없이 사용 가능, 전체 오차는 우리 모델과 동률"
+    },
+    {
+      "stage": 1,
+      "period_ko": "2개월 차부터",
+      "model": "LightGBM 주간 재학습",
+      "reason_ko": "피크 오차 14.6 대 20.6, 주간 재학습 시 MAE 6.30 → 6.07"
+    },
+    {
+      "stage": 2,
+      "period_ko": "피크 이력 충분 시",
+      "model": "피크 분류기 + 규칙 (2단계 경보)",
+      "reason_ko": "피크 이력이 적던 7월에는 규칙이 분류기보다 우수 (F1 0.64 대 0.30)"
+    },
+    {
+      "stage": 3,
+      "period_ko": "상시",
+      "model": "에이전트 + SOP",
+      "reason_ko": "브리핑, 설명, 조치 제안 및 검증, 결과 기록"
+    }
+  ]
+}
