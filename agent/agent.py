@@ -1,7 +1,7 @@
-"""Rule-based peak agent (runs without any LLM or API key).
+"""Rule-based peak agent --> no LLM or API key required. (demo)
 
-It follows the SOP on a schedule and answers operator questions by routing
-them to the deterministic tools, writing Korean messages from templates.
+Follows the SOP on a schedule and answers operator questions by routing
+them to the deterministic tools, writing messages from templates.
 Every message records the numbers it was built from ('evidence') and passes
 the grounding check before it is shown.
 """
